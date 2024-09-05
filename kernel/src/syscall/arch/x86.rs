@@ -132,9 +132,11 @@ use crate::syscall::{
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
+    aaamytest::sys_aaamytest,
 };
 
 impl_syscall_nums_and_dispatch_fn! {
+    SYS_AAAMYTEST = 500        => sys_aaamytest(args[..1]);
     SYS_READ = 0               => sys_read(args[..3]);
     SYS_WRITE = 1              => sys_write(args[..3]);
     SYS_OPEN = 2               => sys_open(args[..3]);

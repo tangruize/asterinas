@@ -14,8 +14,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisabledPreemptGuard},
-    trap::{disable_local, DisabledLocalIrqGuard},
+    early_println, task::{disable_preempt, DisabledPreemptGuard}, trap::{disable_local, DisabledLocalIrqGuard}
 };
 
 /// Spin-based Read-write Lock
@@ -622,11 +621,17 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockWriteGuard_<T, R> {
     ///
     /// This method always succeeds because the lock is exclusively held by the writer.
     pub fn downgrade(mut self) -> RwLockUpgradeableGuard_<T, R> {
+        let mut loop_cnt = 0;
         loop {
             self = match self.try_downgrade() {
-                Ok(guard) => return guard,
+                Ok(guard) =>
+                    {
+                        early_println!("downgrade loop count: {}", loop_cnt);
+                        return guard;
+                    },
                 Err(e) => e,
             };
+            loop_cnt += 1;
         }
     }
 
@@ -735,5 +740,67 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use alloc::sync::Arc;
+    use crate::{prelude::*, task::{Task, TaskOptions}, arch::timer::Jiffies};
+
+    fn wait_jiffies(value: u64) {
+        let mut previous = Jiffies::elapsed().as_u64();
+        let ddl = previous + value;
+        loop {
+            let current = Jiffies::elapsed().as_u64();
+            if current >= ddl {
+                break;
+            }
+            if current - previous >= 10 {
+                previous = current;
+                Task::yield_now();
+            }
+        }
+    }
+
+    #[ktest]
+    fn test_rwlock_downgrade_performance() {
+        let lock = Arc::new(RwLock::new(5));
+        let lock2 = Arc::clone(&lock);
+        // let lock3 = Arc::clone(&lock);
+        // let lock4 = Arc::clone(&lock);
+        // let lock5 = Arc::clone(&lock);
+
+        TaskOptions::new(move || {
+            wait_jiffies(1000);
+            let r = lock2.read();
+            drop(r);
+        }).data(()).spawn().unwrap();
+        
+        // TaskOptions::new(move || {
+        //     wait_jiffies(1000);
+        //     let r = lock3.read();
+        //     drop(r);
+        // }).data(()).spawn().unwrap();
+
+        // TaskOptions::new(move || {
+        //     wait_jiffies(1000);
+        //     let r = lock4.read();
+        //     drop(r);
+        // }).data(()).spawn().unwrap();
+
+        // TaskOptions::new(move || {
+        //     wait_jiffies(1000);
+        //     let r = lock5.read();
+        //     drop(r);
+        // }).data(()).spawn().unwrap();
+
+        {
+            let w = lock.write();
+            wait_jiffies(3000);
+            let r = w.downgrade();
+            drop(r);
+        }
     }
 }
