@@ -10,7 +10,7 @@ use crate::{prelude::*, thread::{kernel_thread::{KernelThreadExt, ThreadOptions}
 
 use ostd::sync::RwLock;
 
-fn wait_jiffies(value: u64, prompt: &str) {
+fn wait_jiffies(value: u64, _prompt: &str) {
     let mut previous = Jiffies::elapsed().as_u64();
     let ddl = previous + value;
     loop {
@@ -21,7 +21,7 @@ fn wait_jiffies(value: u64, prompt: &str) {
         if current - previous >= 100 {
             previous = current;
             // Thread::yield_now();
-            early_println!("Wait jiffies {}", prompt);
+            // early_println!("Wait jiffies {}", _prompt);
         }
     }
 }
@@ -48,41 +48,41 @@ where F: Fn() + Send + Sync + 'static,
 fn rwlock_read(thread_id: i32, lock: Arc<RwLock<i32>>) {
     spawn_kernel_thread_with_affinity(thread_id, move || {
         let prompt = format!("read{}", thread_id);
-        early_println!("start {}", prompt);
-        wait_jiffies(5000, &prompt);
-        let previous = print_jiffy(&prompt, 0);
+        // early_println!("start {}", prompt);
+        wait_jiffies(1000, &prompt);
+        // let previous = print_jiffy(&prompt, 0);
         let r = lock.read();
-        print_jiffy(&prompt, previous);
+        // print_jiffy(&prompt, previous);
         drop(r);
-        early_println!("end {}", prompt);
+        // early_println!("end {}", prompt);
     });
 }
 
 fn rwlock_write_downgrade(thread_id: i32, lock: Arc<RwLock<i32>>) {
     spawn_kernel_thread_with_affinity(thread_id, move || {
-        let prompt = "downgrade";
-        early_println!("start {}", prompt);
+        let prompt = format!("downgrade{}", thread_id);
+        // early_println!("start {}", prompt);
         let w = lock.write();
-        wait_jiffies(10000, &prompt);
+        wait_jiffies(5000, &prompt);
         let previous = print_jiffy(&prompt, 0);
         let r = w.downgrade();
         print_jiffy(&prompt, previous);
         drop(r);
-        early_println!("end {}", prompt);
+        // early_println!("end {}", prompt);
     });
 }
 
 fn test_rwlock_downgrade_performance(cnt: i32) {
     let lock = Arc::new(RwLock::new(5));
-    for i in 0..cnt {
+    rwlock_write_downgrade(cnt, Arc::clone(&lock));
+    for i in 1..cnt {  // set to 0 will not thread interleaving
         rwlock_read(i, Arc::clone(&lock));
     }
-    rwlock_write_downgrade(cnt, lock);
 }
 
 pub fn sys_aaamytest(cnt: i32, _: &Context) -> Result<SyscallReturn> {
-    early_println!("Aha, you created the syscall!");
+    early_println!("Start rwlock test {}", cnt);
     test_rwlock_downgrade_performance(cnt);
-    early_println!("Bye!");
+    // early_println!("Bye!");
     Ok(SyscallReturn::Return(0))
 }
