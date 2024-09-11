@@ -39,6 +39,7 @@ use ostd::{
     cpu::PinCurrentCpu,
 };
 use process::Process;
+use time::clocks::MonotonicClock;
 
 use crate::{
     prelude::*,
@@ -127,6 +128,84 @@ fn ap_init() -> ! {
     unreachable!()
 }
 
+fn test_all_operations() {
+    println!("# Lock");
+
+    println!("`RwMutex::read`");
+    let rwmutex = RwMutex::new(0u8);
+    test_operation(|| { let _ = rwmutex.read(); });
+
+    println!("`RwMutex::write`");
+    test_operation(|| { let _ = rwmutex.write(); });
+
+    println!("`RwMutex::upread`");
+    test_operation(|| { let _ = rwmutex.upread(); });
+
+    ////////////////
+    let rwlock = RwLock::new(0u8);
+
+    for _ in 0..2 {
+
+    println!("`RwLock::read`");
+    test_operation(|| { let _ = rwlock.read(); });
+
+    println!("`RwLock::read_irq_disabled`");
+    test_operation(|| { let _ = rwlock.read_irq_disabled(); });
+
+    // println!("`RwLock::read_arc`");
+    // test_operation(|| { let _ = rwlock.read_arc(); });
+    
+    ////////////////
+
+    println!("`RwLock::read_before_fix`");
+    let rwlock = RwLock::new(0u8);
+    test_operation(|| { let _ = rwlock.read_before_fix(); });
+
+    println!("`RwLock::read_irq_disabled_before_fix`");
+    test_operation(|| { let _ = rwlock.read_irq_disabled_before_fix(); });
+    }
+
+    // println!("`RwLock::read_arc`");
+    // test_operation(|| { let _ = rwlock.read_arc_before_fix(); });
+
+    /////////////////
+
+    println!("`RwLock::write`");
+    test_operation(|| { let _ = rwlock.write(); });
+
+    println!("`RwLock::write_irq_disabled`");
+    test_operation(|| { let _ = rwlock.write_irq_disabled(); });
+
+    println!("`RwLock::upread`");
+    test_operation(|| { let _ = rwlock.upread(); });
+
+    println!("`RwLock::upread_irq_disabled`");
+    test_operation(|| { let _ = rwlock.upread_irq_disabled(); });
+
+    exit_qemu(QemuExitCode::Success);
+}
+
+fn test_operation(op: impl Fn()) {
+    let clock = MonotonicClock::get();
+
+    const REPETITION: usize = 3;
+    const ITERATION: u32 = 1_000_000;
+
+    let mut res = Vec::with_capacity(REPETITION);
+    for _ in 0..REPETITION {
+        let star_time = clock.read_time();
+        for _ in 0..ITERATION {
+            core::hint::black_box(op());
+        }
+        let end_time = clock.read_time();
+        let avg_time = (end_time - star_time).checked_div(ITERATION).unwrap();
+        res.push(avg_time);
+    }
+
+    println!("time consuming: `{:?}`", res);
+    println!();
+}
+
 fn init_thread() {
     println!(
         "[kernel] Spawn init thread, tid = {}",
@@ -152,6 +231,8 @@ fn init_thread() {
     );
 
     print_banner();
+
+    test_all_operations();
 
     let karg = boot::kernel_cmdline();
 
