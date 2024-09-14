@@ -125,11 +125,6 @@ impl<T> RwLock<T> {
     }
 }
 
-#[inline]
-fn is_read_lockable(lock: usize) -> bool {
-    lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0
-}
-
 // #[inline]
 // fn is_read_lockable(lock: usize) -> bool {
 //     // lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0
@@ -218,16 +213,22 @@ impl<T: ?Sized> RwLock<T> {
     /// when acquiring fails.
     pub fn try_read_irq_disabled(&self) -> Option<RwLockReadGuard<T>> {
         let irq_guard = disable_local();
-        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
-            is_read_lockable(lock).then(|| lock + READER)
-        });
-        if res.is_ok() {
-            Some(RwLockReadGuard {
-                inner: self,
-                inner_guard: InnerGuard::IrqGuard(irq_guard),
-            })
-        } else {
-            None
+        let mut old = self.lock.load(Relaxed);
+        loop {
+            let new = if old & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+                old + READER
+            } else {
+                return None;
+            };
+            match self.lock.compare_exchange_weak(old, new, Acquire, Relaxed) {
+                Ok(_) => {
+                    return Some(RwLockReadGuard {
+                        inner: self,
+                        inner_guard: InnerGuard::IrqGuard(irq_guard),
+                    })
+                }
+                Err(x) => old = x,
+            }
         }
     }
     pub fn try_read_irq_disabled_before_fix(&self) -> Option<RwLockReadGuard<T>> {
@@ -442,16 +443,22 @@ impl<T: ?Sized> RwLock<T> {
     /// [`try_read_irq_disabled`]: Self::try_read_irq_disabled
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         let guard = disable_preempt();
-        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
-            is_read_lockable(lock).then(|| lock + READER)
-        });
-        if res.is_ok() {
-            Some(RwLockReadGuard {
-                inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
-            })
-        } else {
-            None
+        let mut old = self.lock.load(Relaxed);
+        loop {
+            let new = if old & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+                old + READER
+            } else {
+                return None;
+            };
+            match self.lock.compare_exchange_weak(old, new, Acquire, Relaxed) {
+                Ok(_) => {
+                    return Some(RwLockReadGuard {
+                        inner: self,
+                        inner_guard: InnerGuard::PreemptGuard(guard),
+                    })
+                }
+                Err(x) => old = x,
+            }
         }
     }
     pub fn try_read_before_fix(&self) -> Option<RwLockReadGuard<T>> {
@@ -476,16 +483,22 @@ impl<T: ?Sized> RwLock<T> {
     /// [`try_read`]: Self::try_read
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T>> {
         let guard = disable_preempt();
-        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
-            is_read_lockable(lock).then(|| lock + READER)
-        });
-        if res.is_ok() {
-            Some(ArcRwLockReadGuard {
-                inner: self.clone(),
-                inner_guard: InnerGuard::PreemptGuard(guard),
-            })
-        } else {
-            None
+        let mut old = self.lock.load(Relaxed);
+        loop {
+            let new = if old & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+                old + READER
+            } else {
+                return None;
+            };
+            match self.lock.compare_exchange_weak(old, new, Acquire, Relaxed) {
+                Ok(_) => {
+                    return Some(ArcRwLockReadGuard {
+                        inner: self.clone(),
+                        inner_guard: InnerGuard::PreemptGuard(guard),
+                    })
+                }
+                Err(x) => old = x,
+            }
         }
     }
 

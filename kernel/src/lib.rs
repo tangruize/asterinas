@@ -144,25 +144,25 @@ fn test_all_operations() {
     ////////////////
     let rwlock = RwLock::new(0u8);
 
-    for _ in 0..2 {
+    for _ in 0..3 {
 
-    println!("`RwLock::read`");
-    test_operation(|| { let _ = rwlock.read(); });
+        println!("`RwLock::read`");
+        test_operation(|| { let _ = rwlock.read(); });
 
-    println!("`RwLock::read_irq_disabled`");
-    test_operation(|| { let _ = rwlock.read_irq_disabled(); });
+        println!("`RwLock::read_irq_disabled`");
+        test_operation(|| { let _ = rwlock.read_irq_disabled(); });
 
-    // println!("`RwLock::read_arc`");
-    // test_operation(|| { let _ = rwlock.read_arc(); });
-    
-    ////////////////
+        // println!("`RwLock::read_arc`");
+        // test_operation(|| { let _ = rwlock.read_arc(); });
+        
+        ////////////////
 
-    println!("`RwLock::read_before_fix`");
-    let rwlock = RwLock::new(0u8);
-    test_operation(|| { let _ = rwlock.read_before_fix(); });
+        println!("`RwLock::read_before_fix`");
+        let rwlock = RwLock::new(0u8);
+        test_operation(|| { let _ = rwlock.read_before_fix(); });
 
-    println!("`RwLock::read_irq_disabled_before_fix`");
-    test_operation(|| { let _ = rwlock.read_irq_disabled_before_fix(); });
+        println!("`RwLock::read_irq_disabled_before_fix`");
+        test_operation(|| { let _ = rwlock.read_irq_disabled_before_fix(); });
     }
 
     // println!("`RwLock::read_arc`");
