@@ -56,7 +56,8 @@ int main(int argc, char *argv[])
     printf("Sem #  Value  SEMPID  SEMNCNT  SEMZCNT\n");
 
     for (j = 0; j < 1; j++)
-        printf("%3d   %5d   %5d  %5d    %5d\n", j, 0,
+        printf("%3d   %5d   %5d  %5d    %5d\n", j,
+                semctl(semid, j, GETVAL, dummy),
                 semctl(semid, j, GETPID, dummy),
                 semctl(semid, j, GETNCNT, dummy),
                 semctl(semid, j, GETZCNT, dummy));
