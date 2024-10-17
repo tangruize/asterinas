@@ -5,8 +5,9 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <errno.h>
 
-void acquire_lock(int fd, int lock_type, int offset, int length, const char* process_name) {
+int acquire_lock(int fd, int lock_type, int offset, int length, const char* process_name, int nonblocking) {
     struct flock lock;
     
     lock.l_type = lock_type;        // F_WRLCK for write lock, F_RDLCK for read lock
@@ -16,14 +17,20 @@ void acquire_lock(int fd, int lock_type, int offset, int length, const char* pro
 
     // Attempt to acquire the lock
     const char* lock_type_str = (lock_type == F_WRLCK) ? "WRITE" : "READ";
-    printf("%s process attempts to acquire %s lock on range [%d, %d)\n", process_name, lock_type_str, offset, offset + length);
+    if (!nonblocking) {
+        printf("%s process attempts to acquire %s lock on range [%d, %d)\n", process_name, lock_type_str, offset, offset + length);
+    }
 
-    if (fcntl(fd, F_SETLKW, &lock) == -1) {
+    if (fcntl(fd, (nonblocking == 0) ? F_SETLKW : F_SETLK, &lock) == -1) {
+        if (nonblocking && (errno == EAGAIN || errno == EACCES)) {
+            return -1;
+        }
         perror("fcntl");
         exit(EXIT_FAILURE);
     }
     
     printf("%s process acquired %s lock on range [%d, %d)\n", process_name, lock_type_str, offset, offset + length);
+    return 0;
 }
 
 void release_lock(int fd, int offset, int length, const char* process_name) {
@@ -35,6 +42,7 @@ void release_lock(int fd, int offset, int length, const char* process_name) {
     lock.l_len = length;            // Length of the lock
 
     // Attempt to release the lock
+    printf("%s process attempts to release lock on range [%d, %d)\n", process_name, offset, offset + length);
     if (fcntl(fd, F_SETLK, &lock) == -1) {
         perror("fcntl");
         exit(EXIT_FAILURE);
@@ -45,7 +53,7 @@ void release_lock(int fd, int offset, int length, const char* process_name) {
 
 int main() {
     int fd;
-    pid_t pid;
+    pid_t pid, pid2;
     
     // Create a temporary file for locking (use O_CREAT | O_TRUNC to create a new empty file)
     fd = open("lockfile", O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -61,7 +69,7 @@ int main() {
     }
 
     // Parent acquires WRITE lock on range [0, 1)
-    acquire_lock(fd, F_WRLCK, 0, 1, "Parent");
+    acquire_lock(fd, F_WRLCK, 0, 1, "Parent", 0);
 
     // Fork a child process
     pid = fork();
@@ -72,47 +80,62 @@ int main() {
 
     if (pid == 0) {
         // Child process: Try to acquire WRITE lock on the same range [0, 1)
-        acquire_lock(fd, F_WRLCK, 0, 1, "Child");
+        acquire_lock(fd, F_WRLCK, 0, 1, "Child", 0);
 
         // Child process exits
         close(fd);
         printf("Child process exits\n");
         exit(EXIT_SUCCESS);
     } else {
-        // Parent process: Add a short delay to ensure the child runs and tries to acquire the lock first
-        sleep(3);
+        pid2 = fork();
 
-        // Parent process: Try to acquire READ lock on the same range [0, 1)
-        acquire_lock(fd, F_RDLCK, 0, 1, "Parent");
-
-        // Simulate holding the read lock for a short period
-        sleep(3);
-
-        // Parent process: Release the read lock
-        release_lock(fd, 0, 1, "Parent");
-
-        // Now wait for the child process to complete after releasing the read lock
-        int status;
-        pid_t result = waitpid(pid, &status, WNOHANG);
-        int timeout = 10;
-
-        while (result == 0 && timeout > 0) {
-            sleep(1);  // Sleep for 1 second
-            timeout--;
-            result = waitpid(pid, &status, WNOHANG);  // Check if the child has exited
+        if (pid2 < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
         }
 
-        if (result == 0) {
-            printf("Timeout: Child process did not exit within 10 seconds\n");
-        } else if (result == -1) {
-            perror("waitpid");
+        if (pid2 == 0) {
+            // Child process: Try to acquire WRITE lock on the same range [0, 1)
+            printf("Child2 tries to aquire lock\n");
+            while (acquire_lock(fd, F_WRLCK, 0, 1, "Child2", 1) < 0);
+            sleep(3);
+            release_lock(fd, 0, 1, "Child2");
+            // sleep(3);
+            // Child process exits
+            close(fd);
+            printf("Child2 process exits\n");
+            exit(EXIT_SUCCESS);
         } else {
-            printf("Waitpid: Child process exited\n");
-        }
 
-        // Close the file and finish
-        close(fd);
-        printf("Parent process exits\n");
+            // Parent process: Add a short delay to ensure the child runs and tries to acquire the lock first
+            sleep(3);
+
+            // Parent process: Release the read lock
+            release_lock(fd, 0, 1, "Parent");
+
+            // Now wait for the child process to complete after releasing the read lock
+            int status;
+            pid_t result = waitpid(pid, &status, WNOHANG);
+            int timeout = 10;
+
+            while (result == 0 && timeout > 0) {
+                sleep(1);  // Sleep for 1 second
+                timeout--;
+                result = waitpid(pid, &status, WNOHANG);  // Check if the child has exited
+            }
+
+            if (result == 0) {
+                printf("Timeout: Child process did not exit within 10 seconds\n");
+            } else if (result == -1) {
+                perror("waitpid");
+            } else {
+                printf("Waitpid: Child process exited\n");
+            }
+
+            // Close the file and finish
+            close(fd);
+            printf("Parent process exits\n");
+        }
     }
 
     return 0;
