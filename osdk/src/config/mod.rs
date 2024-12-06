@@ -39,6 +39,7 @@ pub struct Config {
     pub build: Build,
     pub run: Action,
     pub test: Action,
+    pub use_cached_bundle: bool,
 }
 
 fn apply_args_before_finalize(
@@ -225,6 +226,7 @@ impl Config {
             build,
             run,
             test,
+            use_cached_bundle: common_args.use_cached_bundle,
         }
     }
 }

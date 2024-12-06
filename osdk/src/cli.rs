@@ -476,4 +476,10 @@ pub struct CommonArgs {
         global = true
     )]
     pub encoding: Option<PayloadEncoding>,
+    #[arg(
+        long = "use-cached-bundle",
+        help = "Skip rebuilding and use a cached bundle if it is reusable",
+        global = true
+    )]
+    pub use_cached_bundle: bool,
 }
